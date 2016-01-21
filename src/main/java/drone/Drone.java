@@ -1,15 +1,17 @@
 package drone;
 
-import java.net.MalformedURLException;
-import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Iterator;
+import java.util.Properties;
 
 import drone.convertor.DummyPathConverter;
 import eventMediatorLocator.EventMediatorLocator;
+import kafka.javaapi.producer.Producer;
+import kafka.producer.KeyedMessage;
+import kafka.producer.ProducerConfig;
 import path.PathPoint;
 import path.Path;
 import pathToNavCommands.Command;
@@ -18,19 +20,27 @@ import remotes.DroneRemoteIF;
 import remotes.MediatorIF;
 import remotes.Notifiable;
 
-public class Drone extends UnicastRemoteObject implements DroneRemoteIF,Moveable {
+public class Drone implements DroneRemoteIF,Moveable {
 	
 	ArrayList<Command> commands;
-	MediatorIF mediator;
+	//MediatorIF mediator;
+    Producer<String,String> producer; //For the moment, we can simply produce string messages
 	PathToComandStrategy convertor;
-	String name;
+	String name; //The name will be used as the name of the topic
 
-	public Drone(String name) throws RemoteException, MalformedURLException, NotBoundException {
-		super();
+	public Drone(String name, String brokers) {
 		this.name =name;
 		this.convertor = new DummyPathConverter(this);
-        this.mediator = EventMediatorLocator.mediator();
-        this.mediator.registerDrone(this);
+        Properties props = new Properties();
+        props.put("metadata.broker.list", brokers);
+        props.put("serializer.class", "kafka.serializer.StringEncoder");
+        //The partitioning
+        //props.put("partitioner.class", "SimplePartitioner");
+        props.put("request.required.acks", "1");
+        ProducerConfig config = new ProducerConfig(props);
+        this.producer = new Producer<String, String>(config);
+        /*this.mediator = EventMediatorLocator.mediator();
+        this.mediator.registerDrone(this);*/
 	}
 
 	@Override
@@ -42,11 +52,8 @@ public class Drone extends UnicastRemoteObject implements DroneRemoteIF,Moveable
 
 	@Override
 	public void goTo(PathPoint point){
-        try {
-            this.mediator.notifyLocation(name,point);
-        } catch (RemoteException e) {
-            e.printStackTrace();
-        }
+        producer.send(new KeyedMessage<String,String>(point.toString(),name));
+        //this.mediator.notifyLocation(name,point);
     }
 	@Override
 	public void go() throws RemoteException {
